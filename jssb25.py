@@ -26,8 +26,16 @@ def cleanAllNum(df, numericalData):
 def tbToGBHDD(row):
     return row * 1024 if row <= 8 else row
 
+def cleanHDD(df):
+    df['harddisk'] = df["harddisk"].apply(tbToGBHDD)
+    return df
+
 def mhzToGhzCPU(row):
     return round(row / 1000, 1) if row > 10 else round(row, 1)
+
+def cleanCPUSpeed(df):
+    df['cpu_speed'] = df['cpu_speed'].apply(mhzToGhzCPU)
+    return df
 
 def extractColor(row):
     colorMap = {
@@ -38,9 +46,9 @@ def extractColor(row):
         r'red': 'red',
         r'white|light': 'white',
         r'almond|dune|beige': 'brown',
-        r'yellow|gold|apollo|electro': 'yellow',
+        r'yellow|gold|apollo': 'yellow',
         r'green|mint|sage': 'green',
-        r'pink': 'pink',
+        r'pink|electro': 'pink',
     }
     for regex, color in colorMap.items():
         if re.search(regex, row):
@@ -54,9 +62,29 @@ def cleanColor(df):
     df['color'] = df['color'].apply(extractColor)
     return df
 
-###################
-### Screen Size ###
-###################
+def cleanRam(df):
+    df["ram"] = df["ram"].round()
+    return df
+
+def extractOS(row):
+    osMapping = {
+        r'windows 10|win 10': 'windows10',
+        r'windows 11|win 11': 'windows11',
+        r'windows 8|win 8': 'windows8',
+        r'windows 7|win 7': 'windows7',
+        r'windows': 'windows',
+        r'chrome os': 'chromeos',
+        r'linux': 'linux',
+        r'mac os|macos': 'macos',
+    }
+    for regex, os in osMapping.items():
+        if re.search(regex, row):
+            return os
+    return 'NA'
+
+def cleanOS(df):
+    df['os'] = df['os'].apply(extractOS)
+    return df
 
 def main():
     pd.set_option("display.max_rows", None)
@@ -79,50 +107,37 @@ def main():
     # Standardize column names (Like making OS lower case)
     df.columns = df.columns.str.lower().str.strip()
 
-    ########################
-    ### Categorical Data ###
-    ########################
-
     categoricalData = ['brand', 'model', 'color', 'cpu', 'os', 'special_features', 'graphics', 'graphics_coprocessor']
     df = cleanCategorical(df, categoricalData)
 
-    ######################
-    ### Numerical Data ###
-    ######################
-
     # Rename columns which has units that needs to be standardized 
     # and to put those into numerical feature list instead of categorical
+
+    numericalData = ['harddisk', 'ram', 'screen_size', 'cpu_speed', 'rating', 'price']
+    df = cleanAllNum(df, numericalData)
+    
+    # Multiply TB values (less than 8) by 1024 to make it GB
+    df = cleanHDD(df)
+    
+    # Divide MHz values (more than 10) by 1000 to make it GHz
+    df = cleanCPUSpeed(df)
+
+    # Ram is only integer amount. Round in case value is not integer
+    df = cleanRam(df)
+    
+    # Clean color to remove non-standard values
+    df = cleanColor(df)
+    
+    # Clean OS by simplifying it to OS type, and version
+    df = cleanOS(df)
+
     df = df.rename(columns={
         "harddisk": "harddisk_gb", 
         "ram": "ram_gb", 
         "screen_size": "screen_size_in", 
         "cpu_speed": "cpu_speed_ghz", 
         "price": "price_dollar"
-        })
-
-    numericalData = ['harddisk_gb', 'ram_gb', 'screen_size_in', 'cpu_speed_ghz', 'rating', 'price_dollar']
-    
-    df = cleanAllNum(df, numericalData)
-    
-    ##################################
-    ### Harddisk & RAM & CPU speed ###
-    ##################################
-    
-    # Multiply TB values (less than 8) by 1024 to make it GB
-    df["harddisk_gb"] = df["harddisk_gb"].apply(tbToGBHDD)
-    
-    # Divide MHz values (more than 10) by 1000 to make it GHz
-    df['cpu_speed_ghz'] = df['cpu_speed_ghz'].apply(mhzToGhzCPU)
-
-    # Ram is only integer amount. Round in case value is not integer
-    df["ram_gb"] = df["ram_gb"].round()
-    
-    #############
-    ### Color ###
-    #############
-    
-    df = cleanColor(df)
-
+    })
     #print(df.dtypes)
     #print(df.describe())
     df.to_excel('amazon_laptop_2023_cleaned.xlsx')
