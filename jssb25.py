@@ -5,6 +5,7 @@ import re
 def cleanCategorical(df, categoricalData):
     for column in categoricalData:
         df[column] = df[column].str.casefold().str.strip()
+        df[column] = df[column].str.extract(r'([a-zA-Z0-9\s\-\/,&]+)')
         df[column] = df[column].fillna('NA')
     return df
 
@@ -39,15 +40,15 @@ def cleanCPUSpeed(df):
 
 def extractColor(row):
     colorMap = {
-        r'black|dark|carbon|balck': 'black',
+        r'black|dark (?:metallic|side)|carbon|balck': 'black',
         r'silver|platinum|aluminum|sliver|midnight|mercury': 'silver',
-        r'gr[ae]y|gary|lunar|graphite': 'grey',
-        r'blue|cobalt|sky': 'blue',
+        r'gr[ae]y|gary|lunar|graphite|ash': 'grey',
+        r'blue|cobalt|sky|teal': 'blue',
         r'red': 'red',
         r'white|light': 'white',
         r'almond|dune|beige': 'brown',
         r'yellow|gold|apollo': 'yellow',
-        r'green|mint|sage': 'green',
+        r'green|mint|sage|moss': 'green',
         r'pink|electro': 'pink',
     }
     for regex, color in colorMap.items():
@@ -95,7 +96,7 @@ def standardizeFeatures(row):
         r'high definition audio|hd[ -]?audio': 'hd_audio',
         r'fingerprint reader|fingerprint': 'fingerprint_reader',
         r'speakers|stereo[ -]?[speakers]?': 'stereo_speakers',
-        r'wifi & bluetooth': 'wifi&bluetooth',
+        r'wifi & bluetooth': 'wifi_and_bluetooth',
         r'(?:water|spill)[ -]?resistant|water[ -]?proof|dishwasher safe': 'water_resistant',
         r'corning[ -]?gorilla[ -]?glass': 'corning_gorilla_glass',
         r'[numeric]?[ -]?keypad': 'numeric_keypad',
@@ -124,13 +125,57 @@ def standardizeFeatures(row):
     if 'NA' in updated:
         updated.remove('NA')
         
-    return sorted(list(updated))
+    return tuple(sorted(updated))
                 
 def cleanSpecialFeatures(df):
     df['special_features'] = df['special_features'].str.split(',')
     df['special_features'] = df['special_features'].apply(standardizeFeatures)
     return df
+
+def extractGPU(df):
+    mask = df['graphics'].isin(['integrated', 'dedicated', 'NA']) == False
+    null_mask_graphics_co = df['graphics_coprocessor'].str.contains('NA')
+    search_mask = mask & null_mask_graphics_co
+    df.loc[search_mask, 'graphics_coprocessor'] = df.loc[search_mask, 'graphics']
+    df.loc[mask, 'graphics'] = 'NA'
+    return df
     
+def standardizeGPU(row):
+    gpuMappingClean = {
+        
+    }
+    
+    for regex, gpu in gpuMappingClean.items():
+        if re.search(regex, row):
+            return gpu
+    return row
+
+def cleanGPU(df):
+    gpuMapping = {
+        r'intel (?:iris xe|integrated) graphics|intel iris plus|integrated iris xe graphics|intel iris': 'intel_iris',
+        r'mediatek integrated|mediatek graphics': 'mediatek',
+        r'nvidia geforce[r]?|geforce': 'nvidia',
+        r'nvidia (?:trx|rtx)|nvidia intel rtx|\brtx\b': 'nvidia_rtx',
+        r'nvidia quadro rtx': 'nvidia_quartro_rtx',
+        r'nvidia quadro|quadro': 'nvidia_quadro',
+        r'nvidia gt[x]?': 'nvidia_gtx',
+        r'nvidia mx': 'nivida_mx ',
+        r'intel hd graphics|intel hd': 'intel_hd',
+        r'intel uhd graphics|uhd graphics': 'intel_uhd',
+        r'amd radeon graphics|amd radeon': 'amd_radeon',
+        r'intel graphics integrated|integrated intel graphic[s]?': 'intel',
+        r'amd integrated graphics': 'amd',
+        r'apple integrated': 'apple',
+        r'integrated[ _]?graphics|embedded|dedicated|intergrated|integreted': 'integrated',
+    }
+    
+    for regex, gpu in gpuMapping.items():
+        df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(regex, gpu, regex=True)
+        
+    #df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(' ', '_', regex=True)
+    
+    return df
+
 def main():
     pd.set_option("display.max_rows", None)
     fileName = 'amazon_laptop_2023.xlsx'
@@ -155,14 +200,19 @@ def main():
     # and to put those into numerical feature list instead of categorical
     numericalData = ['harddisk', 'ram', 'screen_size', 'cpu_speed', 'rating', 'price']
     df = cleanAllNum(df, numericalData)
-    
+    """ 
     df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
     df = cleanCPUSpeed(df) # Divide MHz values (more than 10) by 1000 to make it GHz
     df = cleanRam(df) # Ram is only integer amount. Round in case value is not integer
     df = cleanColor(df) # Clean color to remove non-standard values
     df = cleanOS(df) # Clean OS by simplifying it to OS type, and version
     df = cleanSpecialFeatures(df) # Clean special features by standardising features which are the same
-    
+    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates
+     """
+    df = extractGPU(df)
+    df = cleanGPU(df)
+    print(df['graphics_coprocessor'].value_counts())
+    #print(df['graphics'].value_counts())
     df = df.rename(columns={
         "harddisk": "harddisk_gb", 
         "ram": "ram_gb", 
@@ -171,5 +221,5 @@ def main():
         "price": "price_dollar"
     })
     df.to_excel('amazon_laptop_2023_cleaned.xlsx')
-
+   
 main()
