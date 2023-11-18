@@ -142,37 +142,46 @@ def extractGPU(df):
     return df
     
 def standardizeGPU(row):
-    gpuMappingClean = {
-        
-    }
     gpuExtract = {
-        r'(?P<gpu_series>nvidia_quadro)(?: nvidia_rtx)? ?(?P<gpu_model>[atpk]\d{3,4}m?|\d{4})', # Nvidia quatro
-        r'(?P<gpu_series>nvidia_rtx)\s?(?P<gpu_model>\d{4}(?:_ti| ti)?|[at]\d{3,4})', # Nvidia rtx
-        r'(?P<gpu_series>nvidia_gtx)\s?(?P<gpu_model>(\d{4})(?:[_ ]?(ti))?|[at]?\d{3,4}m?)', # Nvidia gtx
-        r'(nvidia_mx)\s?(\d{3})', # Nvidia mx
+        r'(?P<gpu_series>nvidia[ _]?(?:quadro|rtx|gtx)?)[ _]?(?:intel)?[ _]?(?P<gpu_model>\d{4}[ _]?(ti)?|[kpat]\d{4}[m]?|([ktpa]|mx)?\d{3}m?)?', # Nvidia
+        r'(?P<gpu_series>intel[ _]?(?:iris|u?hd))[ _]?(gr[ap]+hics)?[ _]?(?P<gpu_model>\d{3,4})?', # Intel iris, hd and uhd
+        r'^(integrated)?\s?(?P<gpu_series>intel[ ]?(celeron|arc)?)\s?(dedicated|graphic[s]?\s?(?:processor|integrated)?)?\s?(?P<gpu_model>a\d{3}m)?$', # Intel, ICeleron and IArc
+        r'(?P<gpu_series>amd\s?(radeon)?\s?(?:((rx)?(\s?vega)?)|pro|r[457]|hd|athlon silver)?)(\s?graphics)?\s?(?P<gpu_model>\d{1,4}m?)?', # AMD
+        r'(?P<gpu_series>apple)\s?(?P<gpu_model>m1\s?(?:pro)?)?', # Apple
+        r'(?P<gpu_series>mediatek)', # Mediatek
+        r'(?P<gpu_series>arm)\s?(?P<gpu_model>mali-g\d{2}\s?(?:mp3|2ee mc2))', # Arm
+    }
+    
+    gpuMappingClean = {
+        r'xps9300-7909slv-pus|inter core i7-8650u|integrated|dedicated': 'NA',
     }
     
     for regex in gpuExtract:
         if match := re.search(regex, row):
-            return match.group('gpu_series') + ' ' + match.group('gpu_model').replace(' ', '_')
+            if match.groupdict().get('gpu_model'):
+                return match.group('gpu_series').strip().replace(' ', '_') + ' ' + match.group('gpu_model').strip().replace(' ', '')
+            else:
+                return match.group('gpu_series').strip().replace(' ', '_')
+            
     return row
 
 def cleanGPU(df):
     gpuMapping = {
-        r'intel (?:iris xe|integrated) graphics|intel iris plus|integrated iris xe graphics|intel iris|iris xe': 'intel_iris',
-        r'mediatek integrated|mediatek graphics': 'mediatek',
+        r'iris x[e]?|intel xe': 'intel_iris',
         r'nvidia geforce[r]?|geforce': 'nvidia',
         r'nvidia (?:trx|rtx)|nvidia intel rtx|\brtx\b': 'nvidia_rtx',
-        r'nvidia quadro rtx': 'nvidia_quartro_rtx',
-        r'nvidia quadro|quadro': 'nvidia_quadro',
-        r'nvidia gt[x]?': 'nvidia_gtx',
-        r'nvidia mx': 'nvidia_mx ',
-        r'intel hd graphics|intel hd': 'intel_hd',
-        r'intel uhd graphics|uhd graphics': 'intel_uhd',
-        r'amd radeon graphics|amd radeon': 'amd_radeon',
-        r'intel graphics integrated|integrated intel graphic[s]?': 'intel',
-        r'amd integrated graphics': 'amd',
-        r'apple integrated': 'apple',
+        r'quadro|qn20-m1-r': 'nvidia_quadro', # https://forums.lenovo.com/t5/ThinkPad-P-and-W-Series-Mobile-Workstations/NVIDIA-QN20-M1-R/m-p/5165568 and https://www.reddit.com/r/laptops/comments/wxlz4p/anyone_heard_of_a_nvidia_qn20m1r_graphics_card/
+        r't550': 'nvidia quadro t550',
+        r't1200': 'nvidia quadro t1200',
+        r'\bgt\b': 'gtx',
+        r'ati': 'amd', # https://www.networkworld.com/article/735534/data-center-amd-says-goodbye-to-the-ati-brand.html
+        r'(?<!rtx\s)3050': 'rtx 3050',
+        r'(?<!powervr\s)gx6250': 'powervr gx6250',
+        r'(?<!intel\s)uhd': 'intel_uhd',
+        r'(?<!amd\s)radeon': 'amd_radeon',
+        r'(?<!intel\s)hd|gt2': 'intel_hd', # https://www.techpowerup.com/gpu-specs/intel-haswell-gt2.g591
+        r'(?<!arm\s)mali': 'arm mali',
+        r'(?<!apple\s)m1': 'apple m1',
         r'integrated[ _]?graphics|embedded|dedicated|intergrated|integreted': 'dedicated',
     }
     
