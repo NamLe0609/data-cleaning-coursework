@@ -130,7 +130,6 @@ def standardizeFeatures(row):
 def cleanSpecialFeatures(df):
     df['special_features'] = df['special_features'].str.split(',')
     df['special_features'] = df['special_features'].apply(standardizeFeatures)
-    #df = df.explode('special_features')
     return df
 
 def extractGPU(df):
@@ -143,55 +142,102 @@ def extractGPU(df):
     
 def standardizeGPU(row):
     gpuExtract = {
-        r'(?P<gpu_series>nvidia[ _]?(?:quadro|rtx|gtx)?)[ _]?(?:intel)?[ _]?(?P<gpu_model>\d{4}[ _]?(ti)?|[kpat]\d{4}[m]?|([ktpa]|mx)?\d{3}m?)?', # Nvidia
-        r'(?P<gpu_series>intel[ _]?(?:iris|u?hd))[ _]?(gr[ap]+hics)?[ _]?(?P<gpu_model>\d{3,4})?', # Intel iris, hd and uhd
-        r'^(integrated)?\s?(?P<gpu_series>intel[ ]?(celeron|arc)?)\s?(dedicated|graphic[s]?\s?(?:processor|integrated)?)?\s?(?P<gpu_model>a\d{3}m)?$', # Intel, ICeleron and IArc
-        r'(?P<gpu_series>amd\s?(radeon)?\s?(?:((rx)?(\s?vega)?)|pro|r[457]|hd|athlon silver)?)(\s?graphics)?\s?(?P<gpu_model>\d{1,4}m?)?', # AMD
-        r'(?P<gpu_series>apple)\s?(?P<gpu_model>m1\s?(?:pro)?)?', # Apple
-        r'(?P<gpu_series>mediatek)', # Mediatek
-        r'(?P<gpu_series>arm)\s?(?P<gpu_model>mali-g\d{2}\s?(?:mp3|2ee mc2))', # Arm
+        r'(?P<gpu_brand>nvidia[ _]?(?:quadro rtx|quadro|rtx|gtx)?)[ _]?(?:intel)?[ _]?(?P<gpu_model>\d{4}[ _]?(ti)?\s?(?:ada)?|[kpat]\d{4}[m]?|([ktpa]|mx)?\d{3}m?)?', # Nvidia
+        r'(?P<gpu_brand>intel[ _]?(?:iris|u?hd))[ _]?(?P<gpu_model>\d{3,4})?', # Intel iris, hd and uhd
+        r'^(integrated)?\s?(?P<gpu_brand>intel[ ]?(celeron|arc)?)\s?(integrated|dedicated|(?:processor|integrated)?)?\s?(?P<gpu_model>a\d{3}m)?$', # Intel, ICeleron and IArc
+        r'(?P<gpu_brand>amd)\s?(?P<gpu_model>(?:(?:mobility|\s?radeon)+)?\s?(?:(?:\s|wx|rx|vega|pro|r[457]|hd|athlon|silver|integrated|m|gl)+)?\s?(?:\d{1,4}m?)?)', # AMD this also works r'(amd)\s?((?:(?!rtx).)*)'
+        r'(?P<gpu_brand>apple)\s?(?P<gpu_model>m1\s?(?:pro)?)?', # Apple
+        r'(?P<gpu_brand>mediatek)', # Mediatek
+        r'(?P<gpu_brand>arm)\s?(?P<gpu_model>mali-g\d{2}\s?(?:mp3|2ee mc2))', # Arm
     }
     
-    gpuMappingClean = {
-        r'xps9300-7909slv-pus|inter core i7-8650u|integrated|dedicated': 'NA',
-    }
+    useless = r'xps9300-7909slv-pus|inter core i7-8650u'
     
     for regex in gpuExtract:
         if match := re.search(regex, row):
             if match.groupdict().get('gpu_model'):
-                return match.group('gpu_series').strip().replace(' ', '_') + ' ' + match.group('gpu_model').strip().replace(' ', '')
+                return match.group('gpu_brand').strip()+ ' ' + match.group('gpu_model').strip()
             else:
-                return match.group('gpu_series').strip().replace(' ', '_')
-            
+                return match.group('gpu_brand').strip()
+    
+    if re.search(useless, row):
+        return 'NA'
+    
     return row
+
+# Set graphics column value based on graphics_coprocessor column. Then remove all 'dedicated' and 'integrated' from 
+def fillInGraphics(df):
+    df['graphics'] = 'NA'
+    integrated = r'integrated|intel|mediatek|powervr|arm|adreno|athlon|mobility|6[18]0m|vega|r4|r5|r7' # https://www.notebookcheck.net/AMD-Radeon-610M-GPU-Benchmarks-and-Specs.654293.0.html
+    dedicated = r'dedicated|nvidia|560|rx'
+    mask = df['graphics_coprocessor'].str.contains(integrated)
+    df.loc[mask, 'graphics'] = 'integrated'
+    mask = df['graphics_coprocessor'].str.contains(dedicated)
+    df.loc[mask, 'graphics'] = 'dedicated'
+    return df
 
 def cleanGPU(df):
     gpuMapping = {
-        r'iris x[e]?|intel xe': 'intel_iris',
+        r'iris x[e]?|intel xe': 'intel iris',
         r'nvidia geforce[r]?|geforce': 'nvidia',
-        r'nvidia (?:trx|rtx)|nvidia intel rtx|\brtx\b': 'nvidia_rtx',
-        r'quadro|qn20-m1-r': 'nvidia_quadro', # https://forums.lenovo.com/t5/ThinkPad-P-and-W-Series-Mobile-Workstations/NVIDIA-QN20-M1-R/m-p/5165568 and https://www.reddit.com/r/laptops/comments/wxlz4p/anyone_heard_of_a_nvidia_qn20m1r_graphics_card/
-        r't550': 'nvidia quadro t550',
-        r't1200': 'nvidia quadro t1200',
+        r'nvidia (?:trx|rtx)|nvidia intel rtx': 'nvidia rtx',
+        r'(?<!nvidia)quadro|qn20-m1-r': 'nvidia quadro', # https://forums.lenovo.com/t5/ThinkPad-P-and-W-Series-Mobile-Workstations/NVIDIA-QN20-M1-R/m-p/5165568 and https://www.reddit.com/r/laptops/comments/wxlz4p/anyone_heard_of_a_nvidia_qn20m1r_graphics_card/
         r'\bgt\b': 'gtx',
         r'ati': 'amd', # https://www.networkworld.com/article/735534/data-center-amd-says-goodbye-to-the-ati-brand.html
-        r'(?<!rtx\s)3050': 'rtx 3050',
-        r'(?<!powervr\s)gx6250': 'powervr gx6250',
-        r'(?<!intel\s)uhd': 'intel_uhd',
-        r'(?<!amd\s)radeon': 'amd_radeon',
-        r'(?<!intel\s)hd|gt2': 'intel_hd', # https://www.techpowerup.com/gpu-specs/intel-haswell-gt2.g591
-        r'(?<!arm\s)mali': 'arm mali',
+        r'620u': 'uhd 620',
+        r'^t550$': 'nvidia quadro t550',
+        r'^t1200$': 'nvidia quadro t1200',
+        r'(?<!\w )nvidia t': 'nvidia quadro t',
+        r'(?<!\w )rtx': 'nvidia rtx',
+        r'(?<!\w )radeon': 'amd radeon',
+        r'^nvidia 3050$': 'nvidia rtx 3050',
+        r'(?<!\w )uhd': 'intel uhd',
+        r'(?<!\w )(?<!u)hd|gt2': 'intel hd', # https://www.techpowerup.com/gpu-specs/intel-haswell-gt2.g591
+        r'(?<!rtx\s)a3000': 'rtx a3000',
         r'(?<!apple\s)m1': 'apple m1',
-        r'integrated[ _]?graphics|embedded|dedicated|intergrated|integreted': 'dedicated',
+        r'(?<!arm\s)mali': 'arm mali',
+        r'(?<!powervr\s)gx6250': 'powervr gx6250',
+        r'integrated[ _]?graphics|embedded|intergrated|integreted': 'integrated',
+        r'dedicated|integrated[ ,]+dedicated': 'dedicated',
+        r' graphic[s]?': '',
+        r'^amd radeon 5$': 'amd radeon r5',
+        r'^amd radeon 7$': 'amd radeon r7',
     }
+    
+    df = extractGPU(df)
     
     for regex, gpu in gpuMapping.items():
         df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(regex, gpu, regex=True)
-        
-    #df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(' ', '_', regex=True)
+    
     df['graphics_coprocessor'] = df['graphics_coprocessor'].apply(standardizeGPU)
     
+    df = fillInGraphics(df)
+    
+    dedicatedIntegratedMapping = {
+        r'^dedicated$|^integrated$': 'NA',
+        r' integrated| dedicated': '',
+    }
+    
+    for regex, replacement in dedicatedIntegratedMapping.items():
+        df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(regex, replacement, regex=True)
+    
+    df[['gpu_brand', 'gpu_model']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
+    df['gpu_model'] = df['gpu_model'].fillna('NA')
+    df = df.drop(columns=['graphics_coprocessor'], axis = 1)
+    
     return df
+
+""" def standardizeCPU(row):
+    
+    brand = None
+    
+    cpuExtract = {
+        #(amd)?\s?((?:\s|ryzen|(?:[ra]\s|a-)series|athlon|silver|kabini)+?(dual-core\s)?(?:(?:\s|[a]?\d{1}|\d{4}|[umxhk]|-)+))
+    }
+
+def cleanCPU(df):
+    
+     """
 
 def main():
     pd.set_option("display.max_rows", None)
@@ -218,17 +264,18 @@ def main():
     numericalData = ['harddisk', 'ram', 'screen_size', 'cpu_speed', 'rating', 'price']
     df = cleanAllNum(df, numericalData)
     
-    """ df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
+    """ 
+    df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
     df = cleanCPUSpeed(df) # Divide MHz values (more than 10) by 1000 to make it GHz
     df = cleanRam(df) # Ram is only integer amount. Round in case value is not integer
     df = cleanColor(df) # Clean color to remove non-standard values
     df = cleanOS(df) # Clean OS by simplifying it to OS type, and version
     df = cleanSpecialFeatures(df) # Clean special features by standardising features which are the same
-    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates """
+    df = cleanGPU(df) # Clean GPU by standardizing all values and splitting them into gpu brand and gpu model
+    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates
+    """
     
-    df = extractGPU(df)
-    df = cleanGPU(df)
-    print(df['graphics_coprocessor'].value_counts())
+    print(df['cpu'].value_counts())
     
     df = df.rename(columns={
         "harddisk": "harddisk_gb", 
