@@ -142,23 +142,23 @@ def extractGPU(df):
     
 def standardizeGPU(row):
     gpuExtract = {
-        r'(?P<gpu_brand>nvidia[ _]?(?:quadro rtx|quadro|rtx|gtx)?)[ _]?(?:intel)?[ _]?(?P<gpu_model>\d{4}[ _]?(ti)?\s?(?:ada)?|[kpat]\d{4}[m]?|([ktpa]|mx)?\d{3}m?)?', # Nvidia
-        r'(?P<gpu_brand>intel[ _]?(?:iris|u?hd))[ _]?(?P<gpu_model>\d{3,4})?', # Intel iris, hd and uhd
-        r'^(integrated)?\s?(?P<gpu_brand>intel[ ]?(celeron|arc)?)\s?(integrated|dedicated|(?:processor|integrated)?)?\s?(?P<gpu_model>a\d{3}m)?$', # Intel, ICeleron and IArc
-        r'(?P<gpu_brand>amd)\s?(?P<gpu_model>(?:(?:mobility|\s?radeon)+)?\s?(?:(?:\s|wx|rx|vega|pro|r[457]|hd|athlon|silver|integrated|m|gl)+)?\s?(?:\d{1,4}m?)?)', # AMD this also works r'(amd)\s?((?:(?!rtx).)*)'
-        r'(?P<gpu_brand>apple)\s?(?P<gpu_model>m1\s?(?:pro)?)?', # Apple
-        r'(?P<gpu_brand>mediatek)', # Mediatek
-        r'(?P<gpu_brand>arm)\s?(?P<gpu_model>mali-g\d{2}\s?(?:mp3|2ee mc2))', # Arm
+        r'(?P<gpuBrand>nvidia[ _]?(?:quadro rtx|quadro|rtx|gtx)?)[ _]?(?:intel)?[ _]?(?P<gpuModel>\d{4}[ _]?(ti)?\s?(?:ada)?|[kpat]\d{4}[m]?|([ktpa]|mx)?\d{3}m?)?', # Nvidia
+        r'(?P<gpuBrand>intel[ _]?(?:iris|u?hd))[ _]?(?P<gpuModel>\d{3,4})?', # Intel iris, hd and uhd
+        r'^(integrated)?\s?(?P<gpuBrand>intel[ ]?(celeron|arc)?)\s?(integrated|dedicated|(?:processor|integrated)?)?\s?(?P<gpuModel>a\d{3}m)?$', # Intel, ICeleron and IArc
+        r'(?P<gpuBrand>amd)\s?(?P<gpuModel>(?:(?:mobility|\s?radeon)+)?\s?(?:(?:\s|wx|rx|vega|pro|r[457]|hd|athlon|silver|integrated|m|gl)+)?\s?(?:\d{1,4}m?)?)', # AMD this also works r'(amd)\s?((?:(?!rtx).)*)'
+        r'(?P<gpuBrand>apple)\s?(?P<gpuModel>m1\s?(?:pro)?)?', # Apple
+        r'(?P<gpuBrand>mediatek)', # Mediatek
+        r'(?P<gpuBrand>arm)\s?(?P<gpuModel>mali-g\d{2}\s?(?:mp3|2ee mc2))', # Arm
     }
     
     useless = r'xps9300-7909slv-pus|inter core i7-8650u'
     
     for regex in gpuExtract:
         if match := re.search(regex, row):
-            if match.groupdict().get('gpu_model'):
-                return match.group('gpu_brand').strip()+ ' ' + match.group('gpu_model').strip()
+            if match.groupdict().get('gpuModel'):
+                return match.group('gpuBrand').strip()+ ' ' + match.group('gpuModel').strip()
             else:
-                return match.group('gpu_brand').strip()
+                return match.group('gpuBrand').strip()
     
     if re.search(useless, row):
         return 'NA'
@@ -221,23 +221,80 @@ def cleanGPU(df):
     for regex, replacement in dedicatedIntegratedMapping.items():
         df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(regex, replacement, regex=True)
     
-    df[['gpu_brand', 'gpu_model']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
-    df['gpu_model'] = df['gpu_model'].fillna('NA')
+    df[['gpuBrand', 'gpuModel']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
+    df['gpuModel'] = df['gpuModel'].fillna('NA')
     df = df.drop(columns=['graphics_coprocessor'], axis = 1)
     
     return df
 
-""" def standardizeCPU(row):
-    
-    brand = None
+def standardizeCPU(row):
+    cpuBrand = None
     
     cpuExtract = {
-        #(amd)?\s?((?:\s|ryzen|(?:[ra]\s|a-)series|athlon|silver|kabini)+?(dual-core\s)?(?:(?:\s|[a]?\d{1}|\d{4}|[umxhk]|-)+))
+        r'(?P<cpuBrand>amd)?\s?(?P<cpuModel>(?:ryzen|(?:[ra]\s|a-)series|athlon|silver|kabini|a4|a10)+(?:(?:\s|[a]?\d{1}|\d{4}|[umxhk]|-)+)?)', # AMD
+        r'(?P<cpuBrand>intel)?[ ]?(?P<cpuModel>(?:celeron|core|pentium|atom|xeon|mobile)+[ ]?(?:[imd](?:\d{1})?-?)?[ ]?(?:\d{3,5}[ugxmhktyq]+(?:\d{1})?e?|[nzp](?:\d{4})?|5y10|extreme|2 quad)?)', # Intel
+        r'(?P<cpuModel>(?:cortex) (?:a\d{1,2}))', # Arm
+        r'(?P<cpuModel>snapdragon)' # Qualcomm
     }
+    
+    cpuBrandMap = {
+        r'ryzen|a[- ]series|athlon|a10|kabini|a4': 'amd',
+        r'celeron|core|pentium|atom|xeon|mobile': 'intel',
+        r'cortex': 'arm',
+        r'snapdragon': 'qualcomm',
+    }
+    
+    for regex in cpuExtract:
+        if match := re.search(regex, row):
+            if not match.groupdict().get('cpuBrand'):
+                for regex, brand in cpuBrandMap.items():
+                    if re.search(regex, row):
+                        cpuBrand = brand 
+                        break
+            else:
+                cpuBrand = match.group('cpuBrand').strip()
+            
+            if match.groupdict().get('cpuModel'):
+                return cpuBrand + ' ' + match.group('cpuModel').strip().replace('-',' ')
+            else:
+                return cpuBrand
+    
+    return row
+    
 
 def cleanCPU(df):
+    cpuMapping = {
+        r'corei7-10750h': 'core i7-10750h',
+        r'unknown|others':'NA',
+        r' dual-core| cpu| family| other| processor': '',
+    }
     
-     """
+    for regex, replacement in cpuMapping.items():
+        df['cpu'] = df['cpu'].str.replace(regex, replacement, regex=True)
+        
+    df['cpu'] = df['cpu'].apply(standardizeCPU)
+    
+    df[['cpuBrand', 'cpuModel']] = df['cpu'].str.split(n=1, expand=True)
+    df['cpuModel'] = df['cpuModel'].fillna('NA')
+    df = df.drop(columns=['cpu'], axis = 1)
+
+    return df
+
+def removeBrandInModel(row, brands):
+    for brand in brands:
+        if brand in row['model']:
+            row['brand'] = brand
+            row['model'] = row['model'].replace(brand, '').strip()
+            row['model'] = re.sub('  +', ' ', row['model'])
+            break
+    return row
+
+def cleanModel(df):
+    
+    
+    brands = df['brand'].unique()
+    df = df.apply(removeBrandInModel, axis=1, brands=brands)
+    return df
 
 def main():
     pd.set_option("display.max_rows", None)
@@ -264,18 +321,19 @@ def main():
     numericalData = ['harddisk', 'ram', 'screen_size', 'cpu_speed', 'rating', 'price']
     df = cleanAllNum(df, numericalData)
     
-    """ 
-    df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
+    
+    """ df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
     df = cleanCPUSpeed(df) # Divide MHz values (more than 10) by 1000 to make it GHz
     df = cleanRam(df) # Ram is only integer amount. Round in case value is not integer
     df = cleanColor(df) # Clean color to remove non-standard values
     df = cleanOS(df) # Clean OS by simplifying it to OS type, and version
     df = cleanSpecialFeatures(df) # Clean special features by standardising features which are the same
-    df = cleanGPU(df) # Clean GPU by standardizing all values and splitting them into gpu brand and gpu model
-    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates
-    """
+    df = cleanGPU(df) # Clean GPU by standardizing all values and splitting them into gpu brand and gpu model. Also fill graphics column based on co_processor column
+    df = cleanCPU(df) # Clean CPU by standardizing all values and splitting them into cpu brand and cpu model
+    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates """
     
-    print(df['cpu'].value_counts())
+    df = cleanModel(df)
+    #print(df['model'].value_counts())
     
     df = df.rename(columns={
         "harddisk": "harddisk_gb", 
