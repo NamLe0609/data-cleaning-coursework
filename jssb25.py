@@ -250,9 +250,9 @@ def cleanGPU(df):
     for regex, replacement in dedicatedIntegratedMapping.items():
         df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(regex, replacement, regex=True)
     
-    df[['gpuBrand', 'gpuModel']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
+    """ df[['gpuBrand', 'gpuModel']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
     df['gpuModel'] = df['gpuModel'].fillna('NA')
-    df = df.drop(columns=['graphics_coprocessor'], axis = 1)
+    df = df.drop(columns=['graphics_coprocessor'], axis = 1) """
     
     return df
 
@@ -292,7 +292,8 @@ def standardizeCPU(row):
     
     return row
     
-
+# Tidy up CPU for easier extraction
+# Then split cpu into cpu brand and model
 def cleanCPU(df):
     cpuMapping = {
         r'corei7-10750h': 'core i7-10750h',
@@ -311,6 +312,7 @@ def cleanCPU(df):
 
     return df
 
+# Move the brand which are actually models to the model column
 def moveBrand(row):
     modelInBrand = ['alienware', 'latitude', 'toughbook', 'jtd']
     for model in modelInBrand:
@@ -319,6 +321,7 @@ def moveBrand(row):
             break
     return row
 
+# Standardize brands which are the same
 def cleanBrand(row):
     brandMapping = {
         r'mac': 'apple',
@@ -330,6 +333,7 @@ def cleanBrand(row):
             return brand
     return row
 
+# If the brand is in the model name, remove it
 def removeBrandInModel(row, brands):
     for brand in brands:
         if brand in row['model']:
@@ -338,6 +342,7 @@ def removeBrandInModel(row, brands):
             break
     return row
 
+# From the model name, infer the brand
 def fillBrandFromModel(row):
     brandMapping = {
         r'mac': 'apple',
@@ -351,7 +356,8 @@ def fillBrandFromModel(row):
             break
     return row
 
-def removeUnecessaryFromModel(df):
+# Fix typo and remove unnecessary text from model name
+def removeUnnecessaryFromModel(df):
     replaceMap = {
         r'lititude': 'latitude',
         r'laptop|newest|flagship|commercial| pc|mobile workstation': '',
@@ -361,18 +367,20 @@ def removeUnecessaryFromModel(df):
     
     return df
 
+# Remove double spaces and trailing whitespace
 def cleanup(row):
     row = row.strip()
     row = re.sub('  +', ' ', row)
     return row
 
+# Apply all previously mentioned function to the brand nad model column
 def cleanModelAndBrand(df):
     df = df.apply(moveBrand, axis=1)
     df['brand'] = df['brand'].apply(cleanBrand)
     brands = df['brand'].unique()
     df = df.apply(removeBrandInModel, axis=1, brands=brands)
     df = df.apply(fillBrandFromModel, axis=1)
-    df = removeUnecessaryFromModel(df)
+    df = removeUnnecessaryFromModel(df)
     df['model'] = df['model'].apply(cleanup)
     return df
 
@@ -389,7 +397,6 @@ def main():
     df = df.dropna(axis=0, subset=['model'])
     
     df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates
-    # df.drop_duplicates(subset=['model', 'screen_size', 'color', 'harddisk', 'cpu', 'ram'], keep='first', inplace=True)
 
     # Standardize column names (Like making OS lower case)
     df.columns = df.columns.str.lower().str.strip()
@@ -401,7 +408,7 @@ def main():
     numericalData = ['harddisk', 'ram', 'screen_size', 'cpu_speed', 'rating', 'price']
     df = cleanAllNum(df, numericalData)
     
-    
+    # Clean all columns
     df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
     df = cleanCPUSpeed(df) # Divide MHz values (more than 10) by 1000 to make it GHz
     df = cleanRam(df) # Ram is only integer amount. Round in case value is not integer
@@ -411,10 +418,14 @@ def main():
     df = cleanGPU(df) # Clean GPU by standardizing all values and splitting them into gpu brand and gpu model. Also fill graphics column based on co_processor column
     df = cleanCPU(df) # Clean CPU by standardizing all values and splitting them into cpu brand and cpu model
     df = cleanModelAndBrand(df) # Remove data which doesnt belong in the column. Move then to correct place
-    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates
-    df = df[df['model'] != 'NA'] # Dropping NA in Models. Same logic as before
-    df = df.dropna(axis=0, subset=['model']) # Dropping NA in Models. Same logic as before
     
+    # Drop rows which are exact duplicates
+    df = df.drop_duplicates(ignore_index=True, keep='first') 
+    # Dropping NA and pd.nan in model
+    df = df[df['model'] != 'NA']
+    df = df.dropna(axis=0, subset=['model'])
+    
+    # Rename column to make more sense
     df = df.rename(columns={
         "harddisk": "harddisk_gb", 
         "ram": "ram_gb", 
@@ -423,12 +434,13 @@ def main():
         "price": "price_dollar"
     })
     
+    # Change the order of the columns
     newOrder = ['brand', 'model', 'screen_size_in', 'color', 'harddisk_gb',
              'cpuBrand', 'cpuModel', 'ram_gb', 'os', 'special_features',
              'graphics', 'gpuBrand', 'gpuModel', 'cpu_speed_ghz', 'rating', 'price_dollar']
-    
     df = df[newOrder]
     
+    # Output xlsx file with name
     df.to_excel('amazon_laptop_2023_cleaned.xlsx')
    
 main()
