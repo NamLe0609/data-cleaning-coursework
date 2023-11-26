@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import re
 
+# Replaces missing data with the string 'NA and 
+# extract only alphanumeric and 'normal' characters
 def cleanCategorical(df, categoricalData):
     for column in categoricalData:
         df[column] = df[column].str.casefold().str.strip()
@@ -9,7 +11,7 @@ def cleanCategorical(df, categoricalData):
         df[column] = df[column].fillna('NA')
     return df
 
-# Replaces missing data with the string 'NaN and 
+# Replaces missing data with 0 and 
 # extract only numerical data while ignoring strings
 # also removes commas from numbers
 def cleanNum(df, columnName):
@@ -19,11 +21,13 @@ def cleanNum(df, columnName):
     df[columnName] = df[columnName].fillna(0)
     return df[columnName]
 
+# Apply function to list of numerical data
 def cleanAllNum(df, numericalData):
     for column in numericalData:
         df[column] = cleanNum(df, column)
     return df
 
+# If number is below 8, it must be in TB https://techfident.co.uk/how-much-storage-do-i-need-on-my-laptop/
 def tbToGBHDD(row):
     return row * 1024 if row <= 8 else row
 
@@ -31,6 +35,7 @@ def cleanHDD(df):
     df['harddisk'] = df["harddisk"].apply(tbToGBHDD)
     return df
 
+# If number is greater than 10 GHz, it must be in MHz https://www.lenovo.com/gb/en/glossary/what-is-processor-speed/
 def mhzToGhzCPU(row):
     return round(row / 1000, 1) if row > 10 else round(row, 1)
 
@@ -38,7 +43,8 @@ def cleanCPUSpeed(df):
     df['cpu_speed'] = df['cpu_speed'].apply(mhzToGhzCPU)
     return df
 
-def extractColor(row):
+# Standardize the colors to remove things such as 'Darkside of the moon'
+def standardizeColor(row):
     colorMap = {
         r'black|dark (?:metallic|side)|carbon|balck': 'black',
         r'silver|platinum|aluminum|sliver|midnight|mercury': 'silver',
@@ -56,17 +62,20 @@ def extractColor(row):
             return color
     return 'NA'
 
+# Split colors by [,] and [/] (which means multiple choice of colors), and explode it into multiple rows
 def cleanColor(df):
     df['color'] = df['color'].str.split(r'[,/]')
     df = df.explode('color')
     df['color'] = df['color'].str.strip()
-    df['color'] = df['color'].apply(extractColor)
+    df['color'] = df['color'].apply(standardizeColor)
     return df
 
+# Round the ram (as they cannot be a decimal number)
 def cleanRam(df):
     df["ram"] = df["ram"].round()
     return df
 
+# Remove unnecessary information and only extract OS
 def standardizeOS(row):
     osMapping = {
         r'windows 10|win 10': 'windows10',
@@ -87,24 +96,28 @@ def cleanOS(df):
     df['os'] = df['os'].apply(standardizeOS)
     return df
 
+# Standardize spelling and meaning for standard features
+# Then sort them alphabetically and convert it into a tuple of features
 def standardizeFeatures(row):
     sfMapping = {
         r'anti-? ?glare|anti[ -]?(?:gla|reflection)' : 'anti-glare',
-        r'backlit|backlight': 'backlit_keyboard',
-        r'edge|thin|narrow|bezel': 'thin_bezel', #https://www.tomshardware.com/news/dell-infinityedge-oled-monitors,30854.html https://linustechtips.com/topic/1242078-what-the-hell-is-nanoedge-by-asus/
+        r'backlit|backlight': 'backlit keyboard',
+        r'edge|thin|narrow|bezel': 'thin bezel', #https://www.tomshardware.com/news/dell-infinityedge-oled-monitors,30854.html https://linustechtips.com/topic/1242078-what-the-hell-is-nanoedge-by-asus/
         r'stylus|pen|stylus': 'stylus',
-        r'audio': 'hd_audio',
-        r'fingerprint': 'fingerprint_reader',
-        r'speakers|stereo': 'stereo_speakers',
-        r'wifi & bluetooth': 'wifi_and_bluetooth',
-        r'resistant|water|dishwasher': 'water_resistant',
-        r'gorilla': 'corning_gorilla_glass',
-        r'keypad': 'numeric_keypad',
-        r'chiclet': 'chiclet_keyboard',
+        r'audio': 'hd audio',
+        r'fingerprint': 'fingerprint reader',
+        r'speakers|stereo': 'stereo speakers',
+        r'wifi & bluetooth': 'wifi and bluetooth',
+        r'resistant|water|dishwasher': 'water resistant',
+        r'gorilla': 'corning gorilla glass',
+        r'keypad': 'numeric keypad',
+        r'chiclet': 'chiclet keyboard',
         r'touch[ -]?screen': 'touch-screen',
         r'multi[ -]?touch': 'multi-touch',
         r'alexa': 'alexa',
         r'light and compact|narrow|space saving|portable': 'lightweight',
+        r'ruggedized': 'rugged',
+        r'2[ -]in[ -]1': '2-in-1',
         r'information not available|and play on a fast|work|create|high quality|built for entertainment|premium business-class notebook': 'NA',
     }
     updated = set()
@@ -119,19 +132,31 @@ def standardizeFeatures(row):
                 notFound = False
                 break
         if notFound:
-            item = item.replace(' ','_')
             updated.add(item)
                 
     if 'NA' in updated:
         updated.remove('NA')
         
     return tuple(sorted(updated))
+    
+# Get special features located in model name
+def getSpecialFeature(row):
+    specialFeaturesPattern = r'detachable 2[ -]in[ -]1|2[ -]in[ -]1|rugged|multi-touch'
+    specialFeatures = re.findall(specialFeaturesPattern, row['model'])
+    if specialFeatures:
+        for feature in specialFeatures:
+            row['model'] = row['model'].replace(feature, '').strip()
+        row['special_features'] += specialFeatures
+    return row
                 
 def cleanSpecialFeatures(df):
     df['special_features'] = df['special_features'].str.split(',')
+    df = df.apply(getSpecialFeature, axis=1)
     df['special_features'] = df['special_features'].apply(standardizeFeatures)
     return df
 
+# Get the GPU in graphics column and move to graphics_coprocessor if its empty
+# Uses masks to make it much easier
 def extractGPU(df):
     mask = df['graphics'].isin(['integrated', 'dedicated', 'NA']) == False
     null_mask_graphics_co = df['graphics_coprocessor'].str.contains('NA')
@@ -140,6 +165,7 @@ def extractGPU(df):
     df.loc[mask, 'graphics'] = 'NA'
     return df
     
+# Extract GPU into gpuBrand and gpuModel using regex
 def standardizeGPU(row):
     gpuExtract = {
         r'(?P<gpuBrand>nvidia[ _]?(?:quadro rtx|quadro|rtx|gtx)?)[ _]?(?:intel)?[ _]?(?P<gpuModel>\d{4}[ _]?(ti)?\s?(?:ada)?|[kpat]\d{4}[m]?|([ktpa]|mx)?\d{3}m?)?', # Nvidia
@@ -165,7 +191,7 @@ def standardizeGPU(row):
     
     return row
 
-# Set graphics column value based on graphics_coprocessor column. Then remove all 'dedicated' and 'integrated' from 
+# Set graphics column value based on graphics_coprocessor column
 def fillInGraphics(df):
     df['graphics'] = 'NA'
     integrated = r'integrated|intel|mediatek|powervr|arm|adreno|athlon|mobility|6[18]0m|vega|r4|r5|r7' # https://www.notebookcheck.net/AMD-Radeon-610M-GPU-Benchmarks-and-Specs.654293.0.html
@@ -176,6 +202,9 @@ def fillInGraphics(df):
     df.loc[mask, 'graphics'] = 'dedicated'
     return df
 
+# Standardize GPU names for easier extraction
+# Remove all 'dedicated' and 'integrated' after Graphics column filled in 
+# Split the GPU brand and model into two column
 def cleanGPU(df):
     gpuMapping = {
         r'iris x[e]?|intel xe': 'intel iris',
@@ -227,6 +256,8 @@ def cleanGPU(df):
     
     return df
 
+# Standardize CPU into brand and column
+# If no brand was found, infer it based on cpu model 
 def standardizeCPU(row):
     cpuBrand = None
     
@@ -238,10 +269,10 @@ def standardizeCPU(row):
     }
     
     cpuBrandMap = {
-        r'ryzen|a[- ]series|athlon|a10|kabini|a4': 'amd',
-        r'celeron|core|pentium|atom|xeon|mobile': 'intel',
-        r'cortex': 'arm',
-        r'snapdragon': 'qualcomm',
+        r'ryzen|a[- ]series|athlon|a10|kabini|a4': 'amd', # https://www.amd.com/en/products/specifications/processors
+        r'celeron|core|pentium|atom|xeon|mobile': 'intel', # https://ark.intel.com/content/www/us/en/ark.html
+        r'cortex': 'arm', # https://www.arm.com/products/silicon-ip-cpu
+        r'snapdragon': 'qualcomm', # https://www.qualcomm.com/snapdragon/overview
     }
     
     for regex in cpuExtract:
@@ -280,20 +311,69 @@ def cleanCPU(df):
 
     return df
 
+def moveBrand(row):
+    modelInBrand = ['alienware', 'latitude', 'toughbook', 'jtd']
+    for model in modelInBrand:
+        if model in row['brand'] and model not in row['model']:
+            row['model'] = model + ' ' + row['model']
+            break
+    return row
+
+def cleanBrand(row):
+    brandMapping = {
+        r'mac': 'apple',
+        r'toughbook': 'panasonic',
+        r'alienware|latitude': 'dell',
+    }
+    for regex, brand in brandMapping.items():
+        if re.search(regex, row):
+            return brand
+    return row
+
 def removeBrandInModel(row, brands):
     for brand in brands:
         if brand in row['model']:
             row['brand'] = brand
             row['model'] = row['model'].replace(brand, '').strip()
-            row['model'] = re.sub('  +', ' ', row['model'])
             break
     return row
 
-def cleanModel(df):
+def fillBrandFromModel(row):
+    brandMapping = {
+        r'mac': 'apple',
+        r'toughbook': 'panasonic',
+        r'alienware|latitude|precision|e6520': 'dell',
+        r'zephyrus|fire': 'asus',
+    }
+    for regex, brand in brandMapping.items():
+        if re.search(regex, row['model']):
+            row['brand'] = brand
+            break
+    return row
+
+def removeUnecessaryFromModel(df):
+    replaceMap = {
+        r'lititude': 'latitude',
+        r'laptop|newest|flagship|commercial| pc|mobile workstation': '',
+    }
+    for regex, replace in replaceMap.items():
+        df['model'] = df['model'].replace(regex, replace, regex=True)
     
-    
+    return df
+
+def cleanup(row):
+    row = row.strip()
+    row = re.sub('  +', ' ', row)
+    return row
+
+def cleanModelAndBrand(df):
+    df = df.apply(moveBrand, axis=1)
+    df['brand'] = df['brand'].apply(cleanBrand)
     brands = df['brand'].unique()
     df = df.apply(removeBrandInModel, axis=1, brands=brands)
+    df = df.apply(fillBrandFromModel, axis=1)
+    df = removeUnecessaryFromModel(df)
+    df['model'] = df['model'].apply(cleanup)
     return df
 
 def main():
@@ -322,7 +402,7 @@ def main():
     df = cleanAllNum(df, numericalData)
     
     
-    """ df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
+    df = cleanHDD(df) # Multiply TB values (less than 8) by 1024 to make it GB
     df = cleanCPUSpeed(df) # Divide MHz values (more than 10) by 1000 to make it GHz
     df = cleanRam(df) # Ram is only integer amount. Round in case value is not integer
     df = cleanColor(df) # Clean color to remove non-standard values
@@ -330,10 +410,10 @@ def main():
     df = cleanSpecialFeatures(df) # Clean special features by standardising features which are the same
     df = cleanGPU(df) # Clean GPU by standardizing all values and splitting them into gpu brand and gpu model. Also fill graphics column based on co_processor column
     df = cleanCPU(df) # Clean CPU by standardizing all values and splitting them into cpu brand and cpu model
-    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates """
-    
-    df = cleanModel(df)
-    #print(df['model'].value_counts())
+    df = cleanModelAndBrand(df) # Remove data which doesnt belong in the column. Move then to correct place
+    df = df.drop_duplicates(ignore_index=True, keep='first') # Drop rows which are exact duplicates
+    df = df[df['model'] != 'NA'] # Dropping NA in Models. Same logic as before
+    df = df.dropna(axis=0, subset=['model']) # Dropping NA in Models. Same logic as before
     
     df = df.rename(columns={
         "harddisk": "harddisk_gb", 
@@ -342,6 +422,13 @@ def main():
         "cpu_speed": "cpu_speed_ghz", 
         "price": "price_dollar"
     })
+    
+    newOrder = ['brand', 'model', 'screen_size_in', 'color', 'harddisk_gb',
+             'cpuBrand', 'cpuModel', 'ram_gb', 'os', 'special_features',
+             'graphics', 'gpuBrand', 'gpuModel', 'cpu_speed_ghz', 'rating', 'price_dollar']
+    
+    df = df[newOrder]
+    
     df.to_excel('amazon_laptop_2023_cleaned.xlsx')
    
 main()
