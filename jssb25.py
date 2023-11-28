@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 import re
 
 # Replaces missing data with the string 'NA and 
@@ -18,7 +21,7 @@ def cleanNum(df, columnName):
     if df[columnName].dtypes != 'float64':
         df[columnName] = df[columnName].replace(',','', regex=True)
         df[columnName] = df[columnName].str.extract(r'([-+]?\d*\.?\d+)').astype(float)
-    df[columnName] = df[columnName].fillna(0)
+    df[columnName] = df[columnName].fillna(0) # 0 instead of NaN as it is easier to process
     return df[columnName]
 
 # Apply function to list of numerical data
@@ -250,9 +253,9 @@ def cleanGPU(df):
     for regex, replacement in dedicatedIntegratedMapping.items():
         df['graphics_coprocessor'] = df['graphics_coprocessor'].str.replace(regex, replacement, regex=True)
     
-    """ df[['gpuBrand', 'gpuModel']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
+    df[['gpuBrand', 'gpuModel']] = df['graphics_coprocessor'].str.split(n=1, expand=True)
     df['gpuModel'] = df['gpuModel'].fillna('NA')
-    df = df.drop(columns=['graphics_coprocessor'], axis = 1) """
+    df = df.drop(columns=['graphics_coprocessor'], axis = 1)
     
     return df
 
@@ -384,8 +387,8 @@ def cleanModelAndBrand(df):
     df['model'] = df['model'].apply(cleanup)
     return df
 
-def main():
-    pd.set_option("display.max_rows", None)
+# Apply all column cleaning, and do some preprocessing/postprocessing
+def cleanData():
     fileName = 'amazon_laptop_2023.xlsx'
 
     df = pd.read_excel(fileName)
@@ -440,7 +443,166 @@ def main():
              'graphics', 'gpuBrand', 'gpuModel', 'cpu_speed_ghz', 'rating', 'price_dollar']
     df = df[newOrder]
     
-    # Output xlsx file with name
-    df.to_excel('amazon_laptop_2023_cleaned.xlsx')
-   
-main()
+    new_data_types = {
+        'harddisk_gb': 'int64',
+        'ram_gb': 'int64',
+    }
+    df = df.astype(new_data_types)
+
+    df.to_excel('amazon_laptop_2023_cleaned.xlsx', index=False)
+    
+    name = ['ram_screen_hdd_outlier', 'brand_color_os_pregrouping', 'hdd_prebin']
+    plotGraphsClean('amazon_laptop_2023_cleaned.xlsx', name)
+    
+    df = cleanPostVisualize(df)
+    
+    newOrder = ['brand', 'model', 'screen_size_in', 'color', 'harddisk_gb', 'harddisk_range_gb',
+             'cpuBrand', 'cpuModel', 'ram_gb', 'os', 'special_features',
+             'graphics', 'gpuBrand', 'gpuModel', 'rating', 'price_dollar']
+    df = df[newOrder]
+    
+    print(df.dtypes)
+    
+    df.to_excel('amazon_laptop_2023_cleaned.xlsx', index=False)
+    
+    name = ['ram_screen_hdd_nooutlier', 'brand_color_os_postgrouping', 'hdd_postbin']
+    plotGraphsClean('amazon_laptop_2023_cleaned.xlsx', name)
+
+# Plot data to show and remove outliers
+def plotOutlier(laptops, name):
+    # Create a figure and subplots
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(15, 8))
+
+    # Plot the boxplot for RAM, Screen Size, HDD
+    sns.boxplot(data=laptops, x='ram_gb', flierprops={"marker": "x"}, ax=axes[0, 0])
+    axes[0, 0].set(xlabel='GB', ylabel='RAM', title='Distribution of RAM')
+    axes[0, 0].set_ylabel(axes[0, 0].get_ylabel(), rotation=0, labelpad=10)
+
+    sns.boxplot(data=laptops, x='screen_size_in', flierprops={"marker": "x"}, ax=axes[0, 1])
+    axes[0, 1].set(xlabel='In', ylabel='Size', title='Distribution of Screen Size')
+    axes[0, 1].set_ylabel(axes[0, 1].get_ylabel(), rotation=0, labelpad=15)
+
+    sns.boxplot(data=laptops, x='harddisk_gb', flierprops={"marker": "x"}, ax=axes[0, 2])
+    axes[0, 2].set(xlabel='GB', ylabel='HD', title='Distribution of Hard Disk')
+    axes[0, 2].set_ylabel(axes[0, 2].get_ylabel(), rotation=0, labelpad=10)
+    
+    # Plot histograms for RAM, Screen Size, and HDD in the second row
+    sns.histplot(data=laptops, x='ram_gb', ax=axes[1, 0])
+    axes[1, 0].set(xlabel='GB', ylabel='Freq')
+
+    sns.histplot(data=laptops, x='screen_size_in', ax=axes[1, 1])
+    axes[1, 1].set(xlabel='In', ylabel='Freq')
+
+    sns.histplot(data=laptops, x='harddisk_gb', ax=axes[1, 2])
+    axes[1, 2].set(xlabel='GB', ylabel='Freq')
+    
+    plt.tight_layout()
+    
+    plt.savefig(name + '.png')
+
+# Plot data to group into less parts
+def plotGroupCount(laptops, name):
+    fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(18, 8))
+    
+    # Plot countplots for brand, color, OS
+    rotation = 45
+    if laptops['brand'].nunique() > 15:
+        rotation = 77
+    sns.countplot(data=laptops, x='brand', order=laptops['brand'].value_counts().index, ax=axes[0])
+    axes[0].set(xlabel='Brand (More than 10)', ylabel='Count', title='Distribution of Brand')
+    axes[0].set_ylabel(axes[0].get_ylabel(), rotation=0, labelpad=20)
+    axes[0].set_xlabel(axes[0].get_xlabel(), rotation=0, labelpad=10)
+    axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=rotation)
+    
+    sns.countplot(data=laptops, x='color', order=laptops['color'].value_counts().index, ax=axes[1])
+    axes[1].set(xlabel='Color (More than 10)', ylabel='Count', title='Distribution of Color')
+    axes[1].set_ylabel(axes[1].get_ylabel(), rotation=0, labelpad=20)
+    axes[1].set_xlabel(axes[1].get_xlabel(), rotation=0, labelpad=20)
+    axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45)
+    
+    sns.countplot(data=laptops, x='os', order=laptops['os'].value_counts().index, ax=axes[2])
+    axes[2].set(xlabel='Operating System (More than 10)', ylabel='Count', title='Distribution of Operating System')
+    axes[2].set_ylabel(axes[2].get_ylabel(), rotation=0, labelpad=20)
+    axes[2].set_xlabel(axes[2].get_xlabel(), rotation=0, labelpad=10)
+    axes[2].set_xticklabels(axes[2].get_xticklabels(), rotation=45)
+    
+    plt.tight_layout()
+    
+    plt.savefig(name + '.png')
+
+# Plot cpu speed to show why to drop it
+def plotDropCount(laptops):
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(15, 8))
+    
+    laptops['cpu_speed_ghz'] = laptops['cpu_speed_ghz'].fillna(0)
+    sns.countplot(data=laptops, x='cpu_speed_ghz', order=laptops['cpu_speed_ghz'].value_counts().index, ax=axes)
+    axes.set(xlabel='CPU Speed (GHz)', ylabel='Count', title='Distribution of CPU speed')
+    axes.set_ylabel(axes.get_ylabel(), rotation=0, labelpad=20)
+    axes.set_xlabel(axes.get_xlabel(), rotation=0, labelpad=20)
+
+    plt.tight_layout()
+    
+    plt.savefig('cpu_speed_sparce.png')
+
+# Plot hard disk to show why to bin values
+def plotBins(laptops, name):
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(15, 8))
+        
+    col = 'harddisk_gb'
+    if 'harddisk_range_gb' in laptops:
+        col = 'harddisk_range_gb'
+        
+    sns.countplot(data=laptops, x=col, ax=axes)
+    axes.set(xlabel='Hard Disk (GB)', ylabel='Count', title='Distribution of Hard Disk')
+    axes.set_ylabel(axes.get_ylabel(), rotation=0, labelpad=20)
+    axes.set_xlabel(axes.get_xlabel(), rotation=0, labelpad=20)
+    axes.set_xticklabels(axes.get_xticklabels(), rotation=45)
+
+    plt.tight_layout()
+    
+    plt.show()
+    #plt.savefig(name + '.png')
+
+def plotGraphsClean(fileName, name = ['a', 'b', 'c']):
+    sns.set_theme()
+    laptops = pd.read_excel(fileName)
+    #print(laptops.dtypes)
+    numericalData = ['screen_size_in', 'harddisk_gb', 'ram_gb', 'rating', 'price_dollar'] #, 'cpu_speed_ghz']
+    laptops[numericalData] = laptops[numericalData].replace(0, np.nan)
+    
+    """ plotOutlier(laptops, name[0])
+    plotGroupCount(laptops, name[1])
+    if 'cpu_speed_ghz' in laptops:
+        plotDropCount(laptops) """
+    plotBins(laptops, name[2])
+    
+# Further clean data from visualization
+def cleanPostVisualize(df):
+    # Remove outliers
+    df = df[df['ram_gb'] <= 70]
+    df = df[df['screen_size_in'] <= 20]
+    df = df[df['harddisk_gb'] <= 2048]
+    
+    # Reduce brand and color category
+    df.loc[df.groupby('brand').brand.transform('count').lt(11), 'brand'] = 'others'
+    df.loc[df.groupby('color').color.transform('count').lt(11), 'color'] = 'others'
+    df.loc[df.groupby('os').os.transform('count').lt(11), 'os'] = 'others'
+    
+    # Drop CPU speed column
+    df = df.drop(columns=['cpu_speed_ghz'], axis = 1)
+    
+    # Bin HDD
+    df.loc[df['harddisk_gb'] == 65, 'harddisk_gb'] = 64
+    df.loc[df['harddisk_gb'] == 120, 'harddisk_gb'] = 128
+    df.loc[df['harddisk_gb'] == 250, 'harddisk_gb'] = 256
+    df.loc[df['harddisk_gb'] == 500, 'harddisk_gb'] = 512
+    df.loc[df['harddisk_gb'] == 1000, 'harddisk_gb'] = 1024
+    df.loc[df['harddisk_gb'] == 2000, 'harddisk_gb'] = 2048
+    
+    bins = [16, 32, 64, 128, 256, 512, 1024, 2049]
+    df['harddisk_range_gb'] = pd.cut(df['harddisk_gb'], bins=bins, right=False)
+
+    return df
+    
+cleanData()
+#plotGraphsClean('amazon_laptop_2023_cleaned.xlsx')
