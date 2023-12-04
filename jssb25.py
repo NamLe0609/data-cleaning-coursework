@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 import re
 
+FILEPATH = 'images/'
+
 # Replaces missing data with the string 'NA and 
 # extract only alphanumeric and 'normal' characters
 def cleanCategorical(df, categoricalData):
@@ -493,7 +495,7 @@ def plotOutlier(laptops, name):
     axes[1, 2].set(xlabel='GB', ylabel='Freq')
     
     plt.tight_layout()
-    plt.savefig('images/' + name + '.png')
+    plt.savefig(FILEPATH + name + '.png')
 
 # Plot data to group into less parts
 def plotGroupCount(laptops, name):
@@ -501,28 +503,31 @@ def plotGroupCount(laptops, name):
     
     # Plot countplots for brand, color, OS
     rotation = 45
+    label = ['Brand', 'Color', 'Operating System']
     if laptops['brand'].nunique() > 15:
         rotation = 77
+        for i in range(len(label)):
+            label[i] += ' (More than 10)'
     sns.countplot(data=laptops, x='brand', order=laptops['brand'].value_counts().index, ax=axes[0])
-    axes[0].set(xlabel='Brand (More than 10)', ylabel='Count', title='Distribution of Brand')
+    axes[0].set(xlabel=label[0], ylabel='Count', title='Distribution of Brand')
     axes[0].set_ylabel(axes[0].get_ylabel(), rotation=0, labelpad=20)
     axes[0].set_xlabel(axes[0].get_xlabel(), rotation=0, labelpad=10)
     axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=rotation)
     
     sns.countplot(data=laptops, x='color', order=laptops['color'].value_counts().index, ax=axes[1])
-    axes[1].set(xlabel='Color (More than 10)', ylabel='Count', title='Distribution of Color')
+    axes[1].set(xlabel=label[1], ylabel='Count', title='Distribution of Color')
     axes[1].set_ylabel(axes[1].get_ylabel(), rotation=0, labelpad=20)
     axes[1].set_xlabel(axes[1].get_xlabel(), rotation=0, labelpad=20)
     axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45)
     
     sns.countplot(data=laptops, x='os', order=laptops['os'].value_counts().index, ax=axes[2])
-    axes[2].set(xlabel='Operating System (More than 10)', ylabel='Count', title='Distribution of Operating System')
+    axes[2].set(xlabel=label[2], ylabel='Count', title='Distribution of Operating System')
     axes[2].set_ylabel(axes[2].get_ylabel(), rotation=0, labelpad=20)
     axes[2].set_xlabel(axes[2].get_xlabel(), rotation=0, labelpad=10)
     axes[2].set_xticklabels(axes[2].get_xticklabels(), rotation=45)
     
     plt.tight_layout()
-    plt.savefig('images/' + name + '.png')
+    plt.savefig(FILEPATH + name + '.png')
 
 # Plot cpu speed to show why to drop it
 def plotDropCount(laptops):
@@ -535,7 +540,7 @@ def plotDropCount(laptops):
     axes.set_xlabel(axes.get_xlabel(), rotation=0, labelpad=20)
 
     plt.tight_layout()
-    plt.savefig('images/cpu_speed_sparce.png')
+    plt.savefig(FILEPATH + 'cpu_speed_sparce.png')
 
 # Plot hard disk to show why to bin values
 def plotBins(laptops, name):
@@ -555,7 +560,7 @@ def plotBins(laptops, name):
     axes.set_xticklabels(axes.get_xticklabels(), rotation=45)
 
     plt.tight_layout()
-    plt.savefig('images/' + name + '.png')
+    plt.savefig(FILEPATH + name + '.png')
 
 def plotGraphsClean(df, name = ['a', 'b', 'c']):
     sns.set_theme()
